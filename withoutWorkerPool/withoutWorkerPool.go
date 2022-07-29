@@ -1,18 +1,11 @@
-package main
+package withoutWorkerPool
 
 import (
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
-	"sync"
 	"time"
-)
-
-// add constants
-const (
-	userCount   int = 100
-	workerCount int = 12 // runtime.NumCPU()
 )
 
 var actions = []string{"logged in", "logged out", "created record", "deleted record", "updated account"}
@@ -42,27 +35,13 @@ func main() {
 
 	startTime := time.Now()
 
-	users := make(chan User, userCount) // make buffered User channel
-	wg := &sync.WaitGroup{}             // init wait group for users
-	wg.Add(userCount)                   // add tasks for every user
+	users := generateUsers(100)
 
-	// use worker pool
-	for i := 0; i < workerCount; i++ {
-		go worker(users, wg)
-	}
-
-	generateUsers(users)
-	wg.Wait() // wait for saveUserInfo(user) for every user
-
-	fmt.Printf("DONE! Time Elapsed: %.2f seconds\n", time.Since(startTime).Seconds()) // 10x faster than without worker pool
-}
-
-// workers read users form channel, save info and finish WG task
-func worker(users <-chan User, wg *sync.WaitGroup) {
-	for user := range users {
+	for _, user := range users {
 		saveUserInfo(user)
-		wg.Done()
 	}
+
+	fmt.Printf("DONE! Time Elapsed: %.2f seconds\n", time.Since(startTime).Seconds())
 }
 
 func saveUserInfo(user User) {
@@ -78,9 +57,11 @@ func saveUserInfo(user User) {
 	time.Sleep(time.Second)
 }
 
-func generateUsers(users chan<- User) {
-	for i := 0; i < userCount; i++ {
-		users <- User{
+func generateUsers(count int) []User {
+	users := make([]User, count)
+
+	for i := 0; i < count; i++ {
+		users[i] = User{
 			id:    i + 1,
 			email: fmt.Sprintf("user%d@company.com", i+1),
 			logs:  generateLogs(rand.Intn(1000)),
@@ -88,7 +69,8 @@ func generateUsers(users chan<- User) {
 		fmt.Printf("generated user %d\n", i+1)
 		time.Sleep(time.Millisecond * 100)
 	}
-	close(users)
+
+	return users
 }
 
 func generateLogs(count int) []logItem {
