@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -42,26 +41,35 @@ func main() {
 
 	startTime := time.Now()
 
-	users := make(chan User, userCount) // make buffered User channel
-	wg := &sync.WaitGroup{}             // init wait group for users
-	wg.Add(userCount)                   // add tasks for every user
+	jobs := make(chan User, userCount)    // make buffered User channel
+	results := make(chan bool, userCount) // make buffered bool channel
 
 	// use worker pool
 	for i := 0; i < workerCount; i++ {
-		go worker(users, wg)
+		go worker(jobs, results)
 	}
 
-	generateUsers(users)
-	wg.Wait() // wait for saveUserInfo(user) for every user
+	users := generateUsers(userCount)
 
-	fmt.Printf("DONE! Time Elapsed: %.2f seconds\n", time.Since(startTime).Seconds()) // 10x faster than without worker pool
+	// write users to buffered channel
+	for _, user := range users {
+		jobs <- user
+	}
+	close(jobs)
+
+	// print is job done
+	for i := 0; i < userCount; i++ {
+		fmt.Printf("job #%d done: %t\n", i+1, <-results)
+	}
+
+	fmt.Printf("DONE! Time Elapsed: %.2f seconds\n", time.Since(startTime).Seconds())
 }
 
-// workers read users form channel, save info and finish WG task
-func worker(users <-chan User, wg *sync.WaitGroup) {
-	for user := range users {
-		saveUserInfo(user)
-		wg.Done()
+// workers read users form channel, save info and write true to results channel
+func worker(jobs <-chan User, results chan<- bool) {
+	for job := range jobs {
+		saveUserInfo(job)
+		results <- true
 	}
 }
 
@@ -78,9 +86,11 @@ func saveUserInfo(user User) {
 	time.Sleep(time.Second)
 }
 
-func generateUsers(users chan<- User) {
-	for i := 0; i < userCount; i++ {
-		users <- User{
+func generateUsers(count int) []User {
+	users := make([]User, count)
+
+	for i := 0; i < count; i++ {
+		users[i] = User{
 			id:    i + 1,
 			email: fmt.Sprintf("user%d@company.com", i+1),
 			logs:  generateLogs(rand.Intn(1000)),
@@ -88,7 +98,8 @@ func generateUsers(users chan<- User) {
 		fmt.Printf("generated user %d\n", i+1)
 		time.Sleep(time.Millisecond * 100)
 	}
-	close(users)
+
+	return users
 }
 
 func generateLogs(count int) []logItem {
